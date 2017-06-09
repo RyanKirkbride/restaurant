@@ -1,0 +1,25 @@
+<html>
+
+<body>
+
+<h1>Edit Item</h1>
+
+<form action="{{url_for('editMenuItem', restaurant_id=restaurant_id, menu_id=menu_id)}}" method="post">
+
+<p>Name:</p>
+  <input type='text' size='30' name='name' value ={{item.name}}>
+
+<p>Description:</p>
+  <textarea name="description" name="description">{{item.description}}</textarea>
+
+<p>Price:</p>
+  $<input type="number" name='price' value="{{ item.price | float }}" step=0.1 >
+
+<p>Course:</p>
+  <input type="text" name='course' value="{{item.course}}">
+ </br></br>
+ <input type="submit" value="Confirm">
+
+ </body>
+
+ </html>

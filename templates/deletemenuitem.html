@@ -1,0 +1,18 @@
+<html>
+
+<body>
+
+<h1>Delete Following Item?</h1>
+
+<form action="{{url_for('deleteMenuItem', restaurant_id=restaurant_id, menu_id=menu_id) }}" method='post'>
+
+   Name: {{item.name}} </br>
+   Desciption: {{item.description}} </br>
+   Price: ${{item.price}} </br>
+   Course: {{item.course}} </br>
+   <input type='submit' value='Delete'>
+</form>
+
+</body>
+
+</html>
