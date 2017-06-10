@@ -4,7 +4,7 @@ app = Flask(__name__)
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from database_setup import Restaurant, Base, MenuItem
+from database_setup import Restaurant, Base, MenuItem, User
 
 from flask import session as login_session
 from flask import make_response
@@ -12,6 +12,7 @@ import random, string
 
 from oauth2client.client import flow_from_clientsecrets
 from oauth2client.client import FlowExchangeError
+from oauth2client.client import OAuth2Credentials
 import httplib2
 import json
 import requests
@@ -83,7 +84,7 @@ def gconnect():
         response.headers['Content-Type'] = 'application/json'
         return response
 
-    stored_credentials = login_session.get('credentials')
+    stored_credentials = OAuth2Credentials.from_json(login_session.get('credentials'))
     stored_gplus_id = login_session.get('gplus_id')
     if stored_credentials is not None and gplus_id == stored_gplus_id:
         response = make_response(json.dumps('Current user is already connected.'),
@@ -92,7 +93,7 @@ def gconnect():
         return response
 
     # Store the access token in the session for later use.
-    login_session['credentials'] = credentials
+    login_session['credentials'] = credentials.to_json()
     login_session['gplus_id'] = gplus_id
 
     # Get user info
@@ -106,6 +107,12 @@ def gconnect():
     login_session['picture'] = data['picture']
     login_session['email'] = data['email']
 
+    user_id = getUserID(login_session['email'])
+    if not user_id:
+        user_id = createUser(login_session)
+    login_session['user_id'] = user_id
+
+
     output = ''
     output += '<h1>Welcome, '
     output += login_session['username']
@@ -116,6 +123,35 @@ def gconnect():
     flash("you are now logged in as %s" % login_session['username'])
     print "done!"
     return output
+
+@app.route("/gdisconnect")
+def gdisconnect():
+    credentials = OAuth2Credentials.from_json(login_session.get('credentials'))
+
+    if credentials is None:
+        response = make_response(json.dumps('Current user not connected'), 401)
+        response.headers['Content-Type'] = 'application/json'
+        return response
+
+    access_token = credentials.access_token
+    url = 'https://accounts.google.com/o/oauth2/revoke?token=%s' % access_token
+    h = httplib2.Http()
+    result = h.request(url,'GET')[0]
+
+    if result['status'] == '200':
+        del login_session['credentials']
+        del login_session['gplus_id']
+        del login_session['username']
+        del login_session['email']
+        del login_session['picture']
+
+        response = make_response(json.dumps('User disconnected'), 200)
+        response.headers['Content-Type'] = 'application/json'
+        return response
+    else:
+        response = make_response(json.dumps('failed to logout'), 400)
+        response.headers['Content-Type'] = 'application/json'
+        return response
 
 @app.route('/')
 @app.route('/restaurant/')
@@ -139,11 +175,25 @@ def restaurantMenuJSON(restaurant_id):
 
     return jsonify(MenuItems=[i.serialize for i in items])
 
+@app.route('/restaurant/new/', methods=['GET','POST'])
+def newRestaurant():
+    if 'username' not in login_session:
+        return redirect('/login')
+    if request.method == 'POST':
+        newRestaurant = Restaurant(name = request.form['name'], user_id=login_session['user_id'])
+        session.add(newRestaurant)
+        flash('New Restaurant Created')
+        session.commit()
+        return redirect(url_for('showRestaurants'))
+    else:
+        return render_template('newrestaurant.html')
+
 @app.route('/restaurant/<int:restaurant_id>/new/', methods=['GET','POST'])
 def newMenuItem(restaurant_id):
     if request.method == 'POST':
         newItem = MenuItem(name = request.form['name'], description = request.form['description'],
-                      price = request.form['price'], course = request.form['course'], restaurant_id = restaurant_id)
+                      price = request.form['price'], course = request.form['course'], restaurant_id = restaurant_id,
+                      user_id=login_session['user_id'])
         session.add(newItem)
         session.commit()
         flash("item succesfully created")
@@ -182,6 +232,26 @@ def deleteMenuItem(restaurant_id, menu_id):
     else:
         return render_template('deletemenuitem.html', restaurant_id=restaurant_id,
   	                           menu_id=menu_id, item=item)
+
+
+def getUserID(email):
+    try:
+        user = session.query(User).filter_by(email=email).one()
+        return user
+    except:
+        return None
+
+def getUserInfo(user_id):
+    user = session.query(User).filter_by(id=user_id).one()
+    return user
+
+def createUser(login_session):
+    newUser = User(name=login_session['username'], email=login_session['email'],
+               picture=login_session['picture'])
+    session.add(newUser)
+    session.commit()
+    user = session.query(User).filter_by(email=login_session['email']).one()
+    return user.id
 
 if __name__ == '__main__':
     app.secret_key = 'key'
